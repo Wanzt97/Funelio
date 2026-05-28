@@ -1,0 +1,40 @@
+name: Deploy funelio.com
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 82.112.241.252
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            docker exec coolify php artisan tinker --execute="
+              use App\Models\ApplicationDeploymentQueue;
+              use App\Models\Application;
+              use App\Models\Server;
+              use App\Jobs\ApplicationDeploymentJob;
+              \$app = Application::where('uuid', 's2rzgovjofdgo1cspcnyni0o')->first();
+              \$server = Server::find(0);
+              \$q = ApplicationDeploymentQueue::create([
+                  'application_id' => \$app->id,
+                  'application_name' => \$app->name,
+                  'server_id' => \$server->id,
+                  'server_name' => \$server->name,
+                  'environment_name' => 'production',
+                  'deployment_uuid' => \Illuminate\Support\Str::random(32),
+                  'status' => 'queued',
+                  'commit' => 'HEAD',
+                  'force_rebuild' => false,
+                  'pull_request_id' => 0,
+              ]);
+              ApplicationDeploymentJob::dispatch(\$q->id)->onQueue('high');
+              echo 'Deploy queued: '.\$q->id;
+            " 2>&1 | grep -E '(Deploy queued|Error)'
